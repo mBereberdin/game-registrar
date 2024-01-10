@@ -1,0 +1,15 @@
+### DotnetCore ###
+# .NET Core build folders
+bin/
+obj/
+
+### VS Code ###
+.vscode/
+src/.vscode
+
+### JetBrains IDE's ###
+.idea/*
+src/.idea/* 
+
+### Logs ###
+logs/
