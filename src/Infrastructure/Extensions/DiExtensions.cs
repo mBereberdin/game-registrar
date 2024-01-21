@@ -1,10 +1,10 @@
 namespace Infrastructure.Extensions;
 
-using Infrastructure.Middlewares;
-using Infrastructure.Services.Implementations;
-using Infrastructure.Services.Interfaces;
+using Domain.Settings;
 
-using Microsoft.AspNetCore.Builder;
+using Infrastructure.Services.Implementations;
+
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
@@ -15,29 +15,28 @@ using Serilog;
 public static class DiExtensions
 {
     /// <summary>
-    /// Добавить промежуточные слои приложения.
-    /// </summary>
-    /// <param name="builder">Строитель приложения.</param>
-    public static void AddAppMiddlewares(this IApplicationBuilder builder)
-    {
-        Log.Logger.Information("Добавление промежуточных слоев приложения.");
-
-        builder.UseMiddleware<ExceptionsMiddleware>();
-
-        Log.Logger.Information("Промежуточные слои приложения добавлены.");
-    }
-
-    /// <summary>
-    /// Добавить сервисы.
+    /// Добавить регистрацию игры в узле игр.
     /// </summary>
     /// <param name="services">Сервисы приложения.</param>
-    public static void AddServices(this IServiceCollection services)
+    /// <param name="configuration">Конфигурация приложения.</param>
+    public static void AddGamesHubRegistration(this IServiceCollection services,
+        IConfiguration configuration)
     {
-        Log.Logger.Information("Добавление сервисов.");
+        Log.Logger.Information(
+            "Добавление сервисов и настроек для регистрации игры в узле игр.");
 
-        // Singleton в данном примере используется для проверки запросов. Конкретно - для получения сущности по id после ее добавления.
-        services.AddSingleton<ITestEntitesService, TestEntitesService>();
+        // GamesHubService регистрируется как singleton, в данном случае клиент регистрируется для этого сервиса, чтобы клиент жил нужное время.
+        // https://github.com/dotnet/runtime/issues/80303
+        services.AddHttpClient("GamesHub");
+        services.AddHostedService<GamesHubService>();
 
-        Log.Logger.Information("Сервисы добавлены.");
+        services.Configure<GamesHubSettings>(
+            configuration.GetSection(nameof(GamesHubSettings)));
+
+        services.Configure<RegistrarSettings>(
+            configuration.GetSection(nameof(RegistrarSettings)));
+
+        Log.Logger.Information(
+            "Сервисы и настройки для регистрации игры в узле игр - добавлены.");
     }
 }
