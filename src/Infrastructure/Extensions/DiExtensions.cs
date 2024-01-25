@@ -1,5 +1,6 @@
 namespace Infrastructure.Extensions;
 
+using Domain.Constants;
 using Domain.Settings;
 
 using Infrastructure.Services.Implementations;
@@ -27,7 +28,7 @@ public static class DiExtensions
 
         // GamesHubService регистрируется как singleton, в данном случае клиент регистрируется для этого сервиса, чтобы клиент жил нужное время.
         // https://github.com/dotnet/runtime/issues/80303
-        services.AddHttpClient("GamesHub");
+        services.AddHttpClient(StringConstants.HTTP_CLIENT_NAME);
         services.AddHostedService<GamesHubService>();
 
         services.Configure<GamesHubSettings>(

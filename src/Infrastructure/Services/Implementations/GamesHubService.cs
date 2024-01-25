@@ -1,19 +1,19 @@
 namespace Infrastructure.Services.Implementations;
 
-using System.Runtime.Serialization;
-using System.Text;
-using System.Text.Json;
-
+using Domain.Constants;
 using Domain.DTOs;
 using Domain.Settings;
 
+using Infrastructure.Extensions;
 using Infrastructure.Extensions.Settings;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-/// <inheritdoc />
+/// <summary>
+/// Сервис для взаимодействия с Games Hub.
+/// </summary>
 public class GamesHubService : BackgroundService
 {
     /// <inheritdoc cref="GamesHubSettings"/>
@@ -21,6 +21,16 @@ public class GamesHubService : BackgroundService
 
     /// <inheritdoc cref="RegistrarSettings"/>
     private readonly RegistrarSettings? _registrarSettings;
+
+    /// <summary>
+    /// URL регистрации игры.
+    /// </summary>
+    private readonly Uri _gameRegistrationUrl;
+
+    /// <summary>
+    /// Строковое содержимое регистрации игры в формате JSON.
+    /// </summary>
+    private readonly StringContent _registerGameStringContent;
 
     /// <summary>
     /// Фабрика http клиентов.
@@ -32,7 +42,7 @@ public class GamesHubService : BackgroundService
     /// </summary>
     private readonly ILogger<GamesHubService> _logger;
 
-    /// <inheritdoc cref="IGamesHubService"/>
+    /// <inheritdoc cref="GamesHubService"/>
     /// <param name="gamesHubSettings">Настройки узла игр.</param>
     /// <param name="registrarSettings">Настройки регистратора.</param>
     /// <param name="httpClientFactory">Фабрика http клиентов.</param>
@@ -43,57 +53,51 @@ public class GamesHubService : BackgroundService
         ILogger<GamesHubService> logger)
     {
         _logger = logger;
-        _logger.LogDebug($"Инициализация: {nameof(GamesHubSettings)}.");
+        _logger.LogDebug($"Инициализация: {nameof(GamesHubService)}.");
 
         _gamesHubSettings = gamesHubSettings.Value;
         _registrarSettings = registrarSettings.Value;
         _httpClientFactory = httpClientFactory;
 
-        _logger.LogDebug($"{nameof(GamesHubSettings)}: инициализирован.");
+        if (!AreSettingsCorrect())
+        {
+            _logger.LogDebug(
+                $"Не удалось проинициализировать: {nameof(GamesHubService)}, т.к. настройки были не корректными.");
+
+            throw new ArgumentException(
+                "Не корректные настройки для инициализации сервиса.");
+        }
+
+        _gameRegistrationUrl = new Uri(
+            $"{_gamesHubSettings!.Host}{_gamesHubSettings.RegisterEndpoint}");
+
+        _registerGameStringContent = new RegisterGameDto
+        {
+            Name = _registrarSettings!.GameName!
+        }.ToJsonStringContent();
+
+        _logger.LogDebug($"{nameof(GamesHubService)}: инициализирован.");
     }
 
-    /// <inheritdoc />
-    public async Task<bool> RegisterGameAsync(HttpClient httpClient,
+    /// <summary>
+    /// Регистрация игры.
+    /// </summary>
+    /// <param name="httpClient">Http клиент.</param>
+    /// <param name="cancellationToken">Токен отмены выполнения операции.</param>
+    private async Task RegisterGameAsync(HttpClient httpClient,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogInformation("Регистрация игры в узле игр.");
 
-        if (!AreSettingsCorrect())
-        {
-            _logger.LogError(
-                "Не удалось зарегистрировать игру в узле т.к. настройки были не корректными.");
-
-            return false;
-        }
-
-        var registrationUrl =
-            new Uri(
-                $"{_gamesHubSettings!.Host}{_gamesHubSettings.RegisterEndpoint}");
-
-        var registerGameDto = new RegisterGameDto
-        {
-            Name = _registrarSettings!.GameName!
-        };
-
-        var registerGameDtoJson = JsonSerializer.Serialize(registerGameDto) ??
-                                  throw new SerializationException(
-                                      "Не удалось сериализовать ДТО регистрации игры.");
-
-        var jsonContent = new StringContent(registerGameDtoJson, Encoding.UTF8,
-            "application/json");
-
         _logger.LogInformation("Отправка запроса регистрации игры.");
         _logger.LogDebug(
-            "Адрес запроса: {registrationUrl}", registrationUrl);
-        _logger.LogDebug(
-            "ДТО регистрации игры в формате json: {registerGameDtoJson}",
-            registerGameDtoJson);
+            "Адрес запроса: {gameRegistrationUrl}", _gameRegistrationUrl);
 
         var registrationResponse =
-            await httpClient.PostAsync(registrationUrl, jsonContent,
-                cancellationToken);
+            await httpClient.PostAsync(_gameRegistrationUrl,
+                _registerGameStringContent, cancellationToken);
 
         _logger.LogInformation("Получен ответ на запрос регистрации игры.");
         _logger.LogDebug(
@@ -105,17 +109,18 @@ public class GamesHubService : BackgroundService
             _logger.LogError(
                 "Ответ от узла игр на запрос регистрации игры оказался не успешным.");
 
-            return false;
+            return;
         }
 
         _logger.LogInformation(
             "Регистрация игры в узле игр - выполнено успешно.");
-
-        return true;
     }
 
-    /// <inheritdoc />
-    public bool AreSettingsCorrect()
+    /// <summary>
+    /// Корректны ли настройки.
+    /// </summary>
+    /// <returns>True - если настройки корректны, иначе - false.</returns>
+    private bool AreSettingsCorrect()
     {
         _logger.LogInformation(
             "Проверка корректности настроек регистратора и узла игр.");
@@ -155,10 +160,14 @@ public class GamesHubService : BackgroundService
             _logger.LogDebug(
                 "Выполнение периодической регистрации в узле игр.");
 
-            using var httpClient = _httpClientFactory.CreateClient("GamesHub");
+            using var httpClient =
+                _httpClientFactory.CreateClient(
+                    StringConstants.HTTP_CLIENT_NAME);
 
             // Не ждём, т.к. эта задача должна выполняется в фоне.
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
             RegisterGameAsync(httpClient, stoppingToken);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
             try
             {
